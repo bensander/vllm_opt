@@ -9,10 +9,10 @@
 
 #ifdef USE_ROCM
   #include "amd/quant_utils.cuh"
-  #define VEC_SIZE 2
+  const int VEC_SIZE = 2;
 #else
   #include "nvidia/quant_utils.cuh"
-  #define VEC_SIZE 1
+  const int VEC_SIZE = 1;
 #endif
 
 namespace vllm {
