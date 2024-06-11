@@ -9,8 +9,10 @@
 
 #ifdef USE_ROCM
   #include "amd/quant_utils.cuh"
+  #define VEC_SIZE 2
 #else
   #include "nvidia/quant_utils.cuh"
+  #define VEC_SIZE 1
 #endif
 
 namespace vllm {
@@ -202,16 +204,16 @@ void convert_fp8(torch::Tensor& dst_data, torch::Tensor& src_data,
   auto t1 = src_data.dtype();
   auto t2 = dst_data.dtype();
   if (src_data.dtype() == at::ScalarType::Float) {
-    call_convert_fp8<uint8_t, float, 2>{}(src_data, dst_data, scale);
+    call_convert_fp8<uint8_t, float, VEC_SIZE>{}(src_data, dst_data, scale);
   } else if (src_data.dtype() == at::ScalarType::Half) {
-    call_convert_fp8<uint8_t, uint16_t, 2>{}(src_data, dst_data, scale);
+    call_convert_fp8<uint8_t, uint16_t, VEC_SIZE>{}(src_data, dst_data, scale);
   } else if (src_data.dtype() == at::ScalarType::BFloat16) {
-    call_convert_fp8<uint8_t, __nv_bfloat16, 2>{}(src_data, dst_data, scale);
+    call_convert_fp8<uint8_t, __nv_bfloat16, VEC_SIZE>{}(src_data, dst_data, scale);
   } else if (dst_data.dtype() == at::ScalarType::Float) {
-    call_convert_fp8<float, uint8_t, 2>{}(src_data, dst_data, scale);
+    call_convert_fp8<float, uint8_t, VEC_SIZE>{}(src_data, dst_data, scale);
   } else if (dst_data.dtype() == at::ScalarType::Half) {
-    call_convert_fp8<uint16_t, uint8_t, 2>{}(src_data, dst_data, scale);
+    call_convert_fp8<uint16_t, uint8_t, VEC_SIZE>{}(src_data, dst_data, scale);
   } else if (dst_data.dtype() == at::ScalarType::BFloat16) {
-    call_convert_fp8<__nv_bfloat16, uint8_t, 2>{}(src_data, dst_data, scale);
+    call_convert_fp8<__nv_bfloat16, uint8_t, VEC_SIZE>{}(src_data, dst_data, scale);
   }
 }
