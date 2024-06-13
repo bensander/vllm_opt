@@ -64,10 +64,11 @@ class LogitsProcessor(nn.Module):
     def _get_logits(self, hidden_states: torch.Tensor, embedding: torch.Tensor,
                     embedding_bias: Optional[torch.Tensor]) -> torch.Tensor:
         # Get the logits for the next tokens.
-        mm = F.linear
+        logits = None
         if ((torch.version.hip is not None):
-            mm = tgemm.mm
-        logits = mm(hidden_states, embedding)
+            logits = tgemm.mm(hidden_states, embedding)
+        else:
+            logits = F.linear(hidden_states, embedding)
         if embedding_bias is not None:
             logits += embedding_bias
         logits = tensor_model_parallel_gather(logits)

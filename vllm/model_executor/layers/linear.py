@@ -91,16 +91,18 @@ class UnquantizedLinearMethod(LinearMethodBase):
               x: torch.Tensor,
               bias: Optional[torch.Tensor] = None) -> torch.Tensor:
         weight = layer.weight
-        mm = F.linear
+        mm_result = None
         if ((torch.version.hip is not None):
-            mm = tgemm.mm
+            mm_result = tgemm.mm(x, weight)
+        else:
+            mm_result = F.linear(x, weight)
         if self.separate_bias_add:
             if bias is not None:
-                return mm(x, weight) + bias
-            return mm(x, weight)
+                return mm_result + bias
+            return mm_result
         elif bias is not None:
             return F.linear(x, weight, bias)
-        return mm(x, weight)
+        return mm_result
 
 
 class LinearBase(torch.nn.Module):
