@@ -92,7 +92,7 @@ class UnquantizedLinearMethod(LinearMethodBase):
               bias: Optional[torch.Tensor] = None) -> torch.Tensor:
         weight = layer.weight
         mm_result = None
-        if ((torch.version.hip is not None):
+        if (torch.version.hip is not None):
             mm_result = tgemm.mm(x, weight)
         else:
             mm_result = F.linear(x, weight)
