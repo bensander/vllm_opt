@@ -13,7 +13,7 @@ from vllm.distributed import (divide, get_tensor_model_parallel_rank,
 from vllm.logger import init_logger
 from vllm.model_executor.layers.quantization.base_config import (
     QuantizationConfig, QuantizeMethodBase)
-if ((torch.version.hip is not None):
+if (torch.version.hip is not None):
     from vllm.model_executor.layers.tuned_gemm import tgemm
 from vllm.model_executor.utils import set_weight_attrs
 
