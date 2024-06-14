@@ -21,7 +21,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Inference-only LLaMA model compatible with HuggingFace weights."""
-from typing import Any, Dict, List, Optional, Tuple
+import os
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import torch
 from torch import nn
@@ -29,27 +30,26 @@ from transformers import LlamaConfig
 
 from vllm import _custom_C
 from vllm.attention import Attention, AttentionMetadata
-from vllm.config import LoRAConfig
+from vllm.config import CacheConfig, LoRAConfig
+from vllm.distributed import (get_tensor_model_parallel_rank,
+                              get_tensor_model_parallel_world_size)
 from vllm.model_executor.layers.activation import SiluAndMul
 from vllm.model_executor.layers.layernorm import RMSNorm
-from vllm.model_executor.layers.quantization import QuantizationConfig
-from vllm.model_executor.layers.linear import (LinearMethodBase,
-                                               MergedColumnParallelLinear,
+from vllm.model_executor.layers.linear import (MergedColumnParallelLinear,
                                                QKVParallelLinear,
                                                RowParallelLinear)
 from vllm.model_executor.layers.logits_processor import LogitsProcessor
+from vllm.model_executor.layers.quantization.base_config import (
+    QuantizationConfig)
 from vllm.model_executor.layers.rotary_embedding import get_rope
 from vllm.model_executor.layers.sampler import Sampler
 from vllm.model_executor.layers.vocab_parallel_embedding import (
     DEFAULT_VOCAB_PADDING_SIZE, ParallelLMHead, VocabParallelEmbedding)
-from vllm.model_executor.parallel_utils.parallel_state import (
-    get_tensor_model_parallel_rank, get_tensor_model_parallel_world_size)
+from vllm.model_executor.model_loader.weight_utils import (
+    default_weight_loader, kv_cache_scales_loader)
 from vllm.model_executor.sampling_metadata import SamplingMetadata
-from vllm.model_executor.weight_utils import (default_weight_loader,
-                                              hf_model_weights_iterator,
-                                              kv_cache_scales_loader)
 from vllm.sequence import SamplerOutput
-from vllm.utils import is_hip
+from vllm.utils import is_hip, print_warning_once
 
 
 class LlamaMLP(nn.Module):
@@ -59,17 +59,19 @@ class LlamaMLP(nn.Module):
         hidden_size: int,
         intermediate_size: int,
         hidden_act: str,
-        linear_method: Optional[LinearMethodBase] = None,
+        quant_config: Optional[QuantizationConfig] = None,
+        bias: bool = False,
     ) -> None:
         super().__init__()
         self.gate_up_proj = MergedColumnParallelLinear(
-            hidden_size, [intermediate_size] * 2,
-            bias=False,
-            linear_method=linear_method)
-        self.down_proj = RowParallelLinear(intermediate_size,
-                                           hidden_size,
-                                           bias=False,
-                                           linear_method=linear_method)
+            input_size=hidden_size,
+            output_sizes=[intermediate_size] * 2,
+            bias=bias,
+            quant_config=quant_config)
+        self.down_proj = RowParallelLinear(input_size=intermediate_size,
+                                           output_size=hidden_size,
+                                           bias=bias,
+                                           quant_config=quant_config)
         if hidden_act != "silu":
             raise ValueError(f"Unsupported activation: {hidden_act}. "
                              "Only silu is supported for now.")
@@ -101,9 +103,9 @@ class LlamaAttention(nn.Module):
         rope_theta: float = 10000,
         rope_scaling: Optional[Dict[str, Any]] = None,
         max_position_embeddings: int = 8192,
-        linear_method: Optional[LinearMethodBase] = None,
+        quant_config: Optional[QuantizationConfig] = None,
         bias: bool = False,
-        sliding_window: Optional[int] = None,
+        cache_config: Optional[CacheConfig] = None,
     ) -> None:
         super().__init__()
         self.hidden_size = hidden_size
@@ -128,28 +130,19 @@ class LlamaAttention(nn.Module):
         self.rope_theta = rope_theta
         self.max_position_embeddings = max_position_embeddings
 
-        # This will be overwritten by model initialization if we are using it.
-        # N.B. currently we only support per tensor scalar scaling factors
-        # & only applicable to ROCm (AMD GPU).
-        # The scaling factor convention we are assuming is
-        # quantized_value * scaling_factor ~= true_value
-        # which is consistent with the practice of setting
-        # scaling_factor = tensor_amax / FPtype_max
-        self.kv_scale = 1.0
-
         self.qkv_proj = QKVParallelLinear(
-            hidden_size,
-            self.head_dim,
-            self.total_num_heads,
-            self.total_num_kv_heads,
+            hidden_size=hidden_size,
+            head_size=self.head_dim,
+            total_num_heads=self.total_num_heads,
+            total_num_kv_heads=self.total_num_kv_heads,
             bias=bias,
-            linear_method=linear_method,
+            quant_config=quant_config,
         )
         self.o_proj = RowParallelLinear(
-            self.total_num_heads * self.head_dim,
-            hidden_size,
+            input_size=self.total_num_heads * self.head_dim,
+            output_size=hidden_size,
             bias=bias,
-            linear_method=linear_method,
+            quant_config=quant_config,
         )
 
         self.rotary_emb = get_rope(
@@ -163,7 +156,8 @@ class LlamaAttention(nn.Module):
                               self.head_dim,
                               self.scaling,
                               num_kv_heads=self.num_kv_heads,
-                              sliding_window=sliding_window)
+                              cache_config=cache_config,
+                              quant_config=quant_config)
 
     def forward(
         self,
@@ -175,8 +169,7 @@ class LlamaAttention(nn.Module):
         qkv, _ = self.qkv_proj(hidden_states)
         q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
         q, k = self.rotary_emb(positions, q, k)
-        attn_output = self.attn(q, k, v, kv_cache, attn_metadata,
-                                self.kv_scale)
+        attn_output = self.attn(q, k, v, kv_cache, attn_metadata)
         output, _ = self.o_proj(attn_output)
         return output
 
@@ -186,15 +179,19 @@ class LlamaDecoderLayer(nn.Module):
     def __init__(
         self,
         config: LlamaConfig,
-        linear_method: Optional[LinearMethodBase] = None,
+        cache_config: Optional[CacheConfig] = None,
+        quant_config: Optional[QuantizationConfig] = None,
     ) -> None:
         super().__init__()
         self.hidden_size = config.hidden_size
         rope_theta = getattr(config, "rope_theta", 10000)
         rope_scaling = getattr(config, "rope_scaling", None)
+        if rope_scaling is not None and getattr(
+                config, "original_max_position_embeddings", None):
+            rope_scaling["original_max_position_embeddings"] = (
+                config.original_max_position_embeddings)
         max_position_embeddings = getattr(config, "max_position_embeddings",
                                           8192)
-        sliding_window = getattr(config, "sliding_window", None)
         # Support abacusai/Smaug-72B-v0.1 with attention_bias
         # Support internlm/internlm-7b with bias
         attention_bias = getattr(config, "attention_bias", False) or getattr(
@@ -207,15 +204,16 @@ class LlamaDecoderLayer(nn.Module):
             rope_theta=rope_theta,
             rope_scaling=rope_scaling,
             max_position_embeddings=max_position_embeddings,
-            linear_method=linear_method,
+            quant_config=quant_config,
             bias=attention_bias,
-            sliding_window=sliding_window,
+            cache_config=cache_config,
         )
         self.mlp = LlamaMLP(
             hidden_size=self.hidden_size,
             intermediate_size=config.intermediate_size,
             hidden_act=config.hidden_act,
-            linear_method=linear_method,
+            quant_config=quant_config,
+            bias=getattr(config, "mlp_bias", False),
         )
         self.input_layernorm = RMSNorm(config.hidden_size,
                                        eps=config.rms_norm_eps)
@@ -256,7 +254,8 @@ class LlamaModel(nn.Module):
     def __init__(
         self,
         config: LlamaConfig,
-        linear_method: Optional[LinearMethodBase] = None,
+        cache_config: Optional[CacheConfig] = None,
+        quant_config: Optional[QuantizationConfig] = None,
         lora_config: Optional[LoRAConfig] = None,
     ) -> None:
         super().__init__()
@@ -272,8 +271,10 @@ class LlamaModel(nn.Module):
             org_num_embeddings=config.vocab_size,
         )
         self.layers = nn.ModuleList([
-            LlamaDecoderLayer(config, linear_method)
-            for _ in range(config.num_hidden_layers)
+            LlamaDecoderLayer(config=config,
+                              cache_config=cache_config,
+                              quant_config=quant_config)
+            for idx in range(config.num_hidden_layers)
         ])
         self.norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
@@ -321,12 +322,8 @@ class LlamaForCausalLM(nn.Module):
 
     # LoRA specific attributes
     supported_lora_modules = [
-        "qkv_proj",
-        "o_proj",
-        "gate_up_proj",
-        "down_proj",
-        "embed_tokens",
-        "lm_head",
+        "qkv_proj", "o_proj", "gate_up_proj", "down_proj", "embed_tokens",
+        "lm_head"
     ]
     embedding_modules = {
         "embed_tokens": "input_embeddings",
@@ -337,13 +334,16 @@ class LlamaForCausalLM(nn.Module):
     def __init__(
         self,
         config: LlamaConfig,
-        linear_method: Optional[LinearMethodBase] = None,
+        cache_config: Optional[CacheConfig] = None,
+        quant_config: Optional[QuantizationConfig] = None,
         lora_config: Optional[LoRAConfig] = None,
     ) -> None:
         super().__init__()
         self.config = config
-        self.linear_method = linear_method
-        self.model = LlamaModel(config, linear_method, lora_config=lora_config)
+        self.model = LlamaModel(config,
+                                cache_config,
+                                quant_config,
+                                lora_config=lora_config)
         self.unpadded_vocab_size = config.vocab_size
         if lora_config:
             self.unpadded_vocab_size += lora_config.lora_extra_vocab_size
@@ -356,6 +356,8 @@ class LlamaForCausalLM(nn.Module):
             # compatibility
             if not lora_config else lora_config.lora_vocab_padding_size,
         )
+        if config.tie_word_embeddings:
+            self.lm_head.weight = self.model.embed_tokens.weight
 
         logit_scale = getattr(config, "logit_scale", 1.0)
         self.logits_processor = LogitsProcessor(self.unpadded_vocab_size,
@@ -387,22 +389,17 @@ class LlamaForCausalLM(nn.Module):
         next_tokens = self.sampler(logits, sampling_metadata)
         return next_tokens
 
-    def load_weights(self,
-                     model_name_or_path: str,
-                     cache_dir: Optional[str] = None,
-                     load_format: str = "auto",
-                     revision: Optional[str] = None):
+    def load_weights(self, weights: Iterable[Tuple[str, torch.Tensor]]):
         stacked_params_mapping = [
             # (param_name, shard_name, shard_id)
-            ("qkv_proj", "q_proj", "q"),
-            ("qkv_proj", "k_proj", "k"),
-            ("qkv_proj", "v_proj", "v"),
-            ("gate_up_proj", "gate_proj", 0),
-            ("gate_up_proj", "up_proj", 1),
+            (".qkv_proj", ".q_proj", "q"),
+            (".qkv_proj", ".k_proj", "k"),
+            (".qkv_proj", ".v_proj", "v"),
+            (".gate_up_proj", ".gate_proj", 0),
+            (".gate_up_proj", ".up_proj", 1),
         ]
         params_dict = dict(self.named_parameters())
-        for name, loaded_weight in hf_model_weights_iterator(
-                model_name_or_path, cache_dir, load_format, revision):
+        for name, loaded_weight in weights:
             if "rotary_emb.inv_freq" in name:
                 continue
             if ("rotary_emb.cos_cached" in name
@@ -425,102 +422,137 @@ class LlamaForCausalLM(nn.Module):
                 # Skip loading extra bias for GPTQ models.
                 if name.endswith(".bias") and name not in params_dict:
                     continue
+                # Remapping the name of FP8 kv-scale.
+                if name.endswith("kv_scale"):
+                    remapped_kv_scale_name = name.replace(
+                        ".kv_scale", ".attn.kv_scale")
+                    if remapped_kv_scale_name not in params_dict:
+                        print_warning_once(
+                            f"Found kv scale in the checkpoint (e.g. {name}), "
+                            "but not found the expected name in the model "
+                            f"(e.g. {remapped_kv_scale_name}). kv-scale is "
+                            "not loaded.")
+                        continue
+                    else:
+                        name = remapped_kv_scale_name
                 param = params_dict[name]
                 weight_loader = getattr(param, "weight_loader",
                                         default_weight_loader)
                 weight_loader(param, loaded_weight)
-                
-    def load_ammo_quantized_weights(
-        self,
-        model_name_or_path: str,
-        cache_dir: Optional[str] = None,
-        load_format: str = "auto",
-        revision: Optional[str] = None,
-        quant_config: Optional[QuantizationConfig] = None):
-        import os.path
-        #import json
-        params_dict = dict(self.named_parameters())
-        #with open("/projects/a.txt", "r") as f:
-        #    j = json.load(f)
-        #    for k, v in j.items():
-        #        params_dict[k].data.copy_(v)
-        quant_shards = [
-            ("mlp.gate_up_proj", "mlp.fc", 0),  # fc is gate_proj
-            ("mlp.gate_up_proj", "mlp.gate", 1),  # gate is up_proj
-        ]
-        quant_map = [
-            ("mlp.down_proj", "mlp.proj"),
-            ("self_attn.o_proj", "attention.dense"),
-            ("self_attn.qkv_proj", "attention.qkv"),
-        ]
-        tp_rank = get_tensor_model_parallel_rank()
-        quantized_filename: str = quant_config.quantized_weights_path
-        #quantized_filename = "quantized/osf/rank0.safetensors"
-        if not quantized_filename.startswith('/'):
-            quantized_filename = os.path.join(model_name_or_path,
-                                              quantized_filename)
-            #if not os.path.isdir(quantized_filename):
-            #    quantized_filename = os.path.dirname(quantized_filename)
-        for name, loaded_weight in hf_model_weights_iterator(
-                quantized_filename, cache_dir, 'safetensors', revision):
-            #print(name)
-            name = name.replace('transformer', 'model')
-            name = name.replace('kv_cache_scaling_factor', 'qkv.output_scaling_factor')
-            #if "output_scaling_factor" in name:
-            #    print(f"{name} {loaded_weight}")
-            #if "kv_cache_scaling_factor" in name:
-            #    print(f"KVK: {name} {loaded_weight}")
-            #if "lm_head" in name:
-            #    print(f"LM {name}: {loaded_weight}")
-            for (param_name, weight_name, shard_id) in quant_shards:
-                if weight_name not in name:
-                    continue
-                name = name.replace(weight_name, param_name)
-                # Skip loading extra bias for GPTQ models.
-                if name.endswith(".bias") and name not in params_dict:
-                    continue
-                param = params_dict[name]
-                if "activation_scaling_factor" in name:
-                    asf_loader = getattr(param, "asf_loader",
-                                         default_weight_loader)
-                    asf_loader(param, loaded_weight, shard_id)
-                elif "weights_scaling_factor" in name:
-                    wsf_loader = getattr(param, "wsf_loader",
-                                         default_weight_loader)
-                    #print(f"{name} {shard_id} {loaded_weight}")
-                    wsf_loader(param, loaded_weight, shard_id)
-                elif "output_scaling_factor" in name:
-                    osf_loader = getattr(param, "osf_loader",
-                                         default_weight_loader)
-                    #print(f"{name} {shard_id} {loaded_weight}")
-                    osf_loader(param, loaded_weight, shard_id)
-                else:
-                    weight_loader = param.weight_loader
-                    weight_loader(param, loaded_weight, shard_id)
-                break
-            else:
-                # Skip loading extra bias for GPTQ models.
-                for (param_name, weight_name) in quant_map:
+
+    def load_quantized_weights(self, weights: Iterable[Tuple[str,
+                                                             torch.Tensor]]):
+
+        def load_ammo():
+            params_dict = dict(self.named_parameters())
+            quant_shards = [
+                ("mlp.gate_up_proj", "mlp.fc", 0),  # fc is gate_proj
+                ("mlp.gate_up_proj", "mlp.gate", 1),  # gate is up_proj
+            ]
+            quant_map = [
+                ("mlp.down_proj", "mlp.proj"),
+                ("self_attn.o_proj", "attention.dense"),
+                ("self_attn.qkv_proj", "attention.qkv"),
+            ]
+            for name, loaded_weight in weights:
+                name = name.replace('transformer', 'model')
+                name = name.replace('kv_cache_scaling_factor',
+                                    'qkv.output_scaling_factor')
+                loaded_weight = loaded_weight.to("cuda")
+                if loaded_weight.dtype == torch.int8:
+                    loaded_weight[loaded_weight == -128] = 0
+                    assert loaded_weight.is_contiguous
+                    loaded_weight = loaded_weight.view(torch.float8_e4m3fnuz)
+                for (param_name, weight_name, shard_id) in quant_shards:
                     if weight_name not in name:
                         continue
                     name = name.replace(weight_name, param_name)
+                    # Skip loading extra bias for GPTQ models.
+                    if name.endswith(".bias") and name not in params_dict:
+                        continue
                     param = params_dict[name]
-                    if "activation_scaling_factor" in name or "weights_scaling_factor" in name:
-                        param.data.copy_(loaded_weight)
-                    if "output_scaling_factor" in name:
-                        param.data.copy_(1 / loaded_weight.item())
-                    else:
-                        weight_loader = getattr(param, "weight_loader",
-                                                default_weight_loader)
-                        weight_loader(param, loaded_weight)
+                    weight_loader = param.weight_loader
+                    weight_loader(param, loaded_weight, shard_id)
                     break
-        rescale = [
-            "mlp.gate_up_proj.weight"
+                else:
+                    # Skip loading extra bias for GPTQ models.
+                    for (param_name, weight_name) in quant_map:
+                        if weight_name not in name:
+                            continue
+                        name = name.replace(weight_name, param_name)
+                        param = params_dict[name]
+                        if ("activation_scaling_factor" in name
+                                or "weights_scaling_factor" in name
+                                or "output_scaling_factor" in name):
+                            param.data.copy_(loaded_weight)
+                        else:
+                            weight_loader = getattr(param, "weight_loader",
+                                                    default_weight_loader)
+                            weight_loader(param, loaded_weight)
+                        break
+
+        def load_quark():
+            params_dict = dict(self.named_parameters())
+            quant_shards = [
+                ("mlp.gate_up_proj", "mlp.gate_proj", 0),  # fc is gate_proj
+                ("mlp.gate_up_proj", "mlp.up_proj", 1),  # gate is up_proj
             ]
-        for name, param in params_dict.items():
-            for suffix in rescale:
-                if name.endswith(suffix):
-                    param.rescale()
+            quant_map = [
+                ("mlp.down_proj", "mlp.down_proj"),
+                ("self_attn.o_proj", "self_attn.o_proj"),
+                ("self_attn.qkv_proj", "self_attn.qkv"),
+            ]
+            scaling_factor_map = [
+                ("activation_scaling_factor", "input_quant_scale"),
+                ("weights_scaling_factor", "weight_quant_scale"),
+                ("output_scaling_factor", "output_quant_scale"),
+            ]
+            for name, loaded_weight in weights:
+                if "zero_point" in name:
+                    continue
+                if len(loaded_weight.shape) == 0:
+                    loaded_weight = torch.Tensor([loaded_weight])
+                # replace the name for scaling factor
+                for (scale_name, weight_name) in scaling_factor_map:
+                    if weight_name not in name:
+                        continue
+                    name = name.replace(weight_name, scale_name)
+                if loaded_weight.dtype == torch.int8:
+                    loaded_weight[loaded_weight == -128] = 0
+                    assert loaded_weight.is_contiguous
+                    loaded_weight = loaded_weight.view(torch.float8_e4m3fnuz)
+
+                for (param_name, weight_name, shard_id) in quant_shards:
+                    if weight_name not in name:
+                        continue
+                    name = name.replace(weight_name, param_name)
+                    # Skip loading extra bias for GPTQ models.
+                    if name.endswith(".bias") and name not in params_dict:
+                        continue
+                    param = params_dict[name]
+                    weight_loader = param.weight_loader
+                    weight_loader(param, loaded_weight, shard_id)
+                    break
+                else:
+                    # Skip loading extra bias for GPTQ models.
+                    for (param_name, weight_name) in quant_map:
+                        if weight_name not in name:
+                            continue
+                        name = name.replace(weight_name, param_name)
+                        param = params_dict[name]
+                        if ("activation_scaling_factor" in name
+                                or "weights_scaling_factor" in name
+                                or "output_scaling_factor" in name):
+                            param.data.copy_(loaded_weight)
+                        else:
+                            weight_loader = getattr(param, "weight_loader",
+                                                    default_weight_loader)
+                            weight_loader(param, loaded_weight)
+                        break
+
+        load_func = load_ammo if os.getenv(
+            "VLLM_FP8_USE_AMMO") == "1" else load_quark
+        load_func()
 
     # If this function is called, it should always initialize KV cache scale
     # factors (or else raise an exception). Thus, handled exceptions should
@@ -541,7 +573,7 @@ class LlamaForCausalLM(nn.Module):
                 # scaling_factor = tensor_amax / FPtype_max
                 scaling_factor *= 2
             if hasattr(layer_self_attn, "kv_scale"):
-                layer_self_attn.kv_scale = scaling_factor
+                layer_self_attn.attn._kv_scale = scaling_factor
             else:
                 raise RuntimeError("Self attention has no KV cache scaling "
                                    "factor attribute!")
