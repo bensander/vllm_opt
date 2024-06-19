@@ -64,6 +64,7 @@ def run_vllm(
     model: str,
     tokenizer: str,
     quantization: Optional[str],
+    quantization_weights_path: Optional[str],
     tensor_parallel_size: int,
     seed: int,
     n: int,
@@ -87,6 +88,7 @@ def run_vllm(
         model=model,
         tokenizer=tokenizer,
         quantization=quantization,
+        quantization_weights_path=quantization_weights_path,
         tensor_parallel_size=tensor_parallel_size,
         seed=seed,
         trust_remote_code=trust_remote_code,
@@ -222,6 +224,7 @@ def main(args: argparse.Namespace):
     if args.backend == "vllm":
         elapsed_time = run_vllm(
             requests, args.model, args.tokenizer, args.quantization,
+            args.quantization_weights_path,
             args.tensor_parallel_size, args.seed, args.n, args.use_beam_search,
             args.trust_remote_code, args.dtype, args.max_model_len,
             args.enforce_eager, args.kv_cache_dtype,
@@ -342,6 +345,13 @@ if __name__ == "__main__":
         'accuracy issues. FP8_E5M2 (without scaling) is only supported on '
         'cuda version greater than 11.8. On ROCm (AMD GPU), FP8_E4M3 is '
         'instead supported for common inference criteria.')
+    parser.add_argument(
+        '--quantization-weights-path',
+        type=str,
+        default=None,
+        help='Path to the safetensor file containing the quantized weights '
+        'and scaling factors. This should generally be supplied, when '
+        'quantization is FP8.')
     parser.add_argument(
         "--device",
         type=str,
