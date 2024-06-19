@@ -224,11 +224,10 @@ def main(args: argparse.Namespace):
     if args.backend == "vllm":
         elapsed_time = run_vllm(
             requests, args.model, args.tokenizer, args.quantization,
-            args.quantization_weights_path,
-            args.tensor_parallel_size, args.seed, args.n, args.use_beam_search,
-            args.trust_remote_code, args.dtype, args.max_model_len,
-            args.enforce_eager, args.kv_cache_dtype,
-            args.quantization_param_path, args.device,
+            args.quantization_weights_path, args.tensor_parallel_size,
+            args.seed, args.n, args.use_beam_search, args.trust_remote_code,
+            args.dtype, args.max_model_len, args.enforce_eager,
+            args.kv_cache_dtype, args.quantization_param_path, args.device,
             args.enable_prefix_caching, args.enable_chunked_prefill,
             args.max_num_batched_tokens, args.gpu_memory_utilization,
             args.worker_use_ray, args.download_dir)
