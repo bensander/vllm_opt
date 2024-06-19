@@ -24,7 +24,7 @@ def main(args: argparse.Namespace):
               num_speculative_tokens=args.num_speculative_tokens,
               tokenizer=args.tokenizer,
               quantization=args.quantization,
-              quantization_weights_path=args.quantization_weights_path,
+              quantized_weights_path=args.quantized_weights_path,
               tensor_parallel_size=args.tensor_parallel_size,
               trust_remote_code=args.trust_remote_code,
               dtype=args.dtype,
@@ -177,7 +177,7 @@ if __name__ == '__main__':
         'cuda version greater than 11.8. On ROCm (AMD GPU), FP8_E4M3 is '
         'instead supported for common inference criteria.')
     parser.add_argument(
-        '--quantization-weights-path',
+        '--quantized-weights-path',
         type=str,
         default=None,
         help='Path to the safetensor file containing the quantized weights '
