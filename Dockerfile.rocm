@@ -119,6 +119,7 @@ RUN --mount=type=bind,from=export_triton,src=/,target=/install \
     fi
 
 RUN python3 -m pip install --upgrade numba
+RUN python3 -m pip install xformers==0.0.23 --no-deps
 
 # Install vLLM (and gradlib)
 # Make sure punica kernels are built (for LoRA)
