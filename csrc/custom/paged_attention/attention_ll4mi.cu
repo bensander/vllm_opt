@@ -1,3 +1,4 @@
+#if defined(__gfx942__)
 // TODO: add license terms
 #include <torch/extension.h>
 #include <ATen/cuda/CUDAContext.h>
@@ -946,3 +947,4 @@ void paged_attention_custom(
 #undef MAX
 #undef MIN
 #undef DIVIDE_ROUND_UP
+#endif

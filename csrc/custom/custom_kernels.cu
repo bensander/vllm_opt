@@ -1,3 +1,4 @@
+#if defined(__gfx942__)
 #include <cuda_runtime.h>
 #include <cuda_fp16.h>
 #include <stdexcept>
@@ -1892,3 +1893,4 @@ void wvSpltK_(void* in_a, void* in_b, void* out_c, const int M_in,
     throw std::runtime_error("CUDA kernel failed : " + std::to_string(err));
   }
 }
+#endif
