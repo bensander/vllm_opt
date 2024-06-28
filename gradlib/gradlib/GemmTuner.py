@@ -285,7 +285,8 @@ class GemmTuner:
         soldf['indtype'] = self.indtype
         soldf['outdtype'] = self.outdtype
         finaldf = pd.concat([self.gemm_problems, soldf], axis=1)
-        finaldf = pd.concat([finaldf, self.gdf])
+        if self.gdf is not None:
+            finaldf = pd.concat([finaldf, self.gdf])
         finaldf['solidx'] = finaldf['solidx'].convert_dtypes('int64')
         finaldf.to_csv(self.tuned_file, index=False)
         print(finaldf)
