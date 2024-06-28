@@ -63,19 +63,19 @@ class Gemm:
 
     def check_gemm_ref(self, libtype, solidx):
         if self.indtype == torch.float8_e4m3fnuz:
-            ref, _ = torch._scaled_mm(self.inp, self.weights.t(), 
+            ref, _ = torch._scaled_mm(self.inp,
+                                      self.weights.t(),
                                       out_dtype=self.outdtype)
         else:
-            ref = F.linear(self.inp,
-                           self.weights)
+            ref = F.linear(self.inp, self.weights)
         if libtype == 'hipblaslt':
             c = hipbsolidxgemm.hipb_mm(self.inp, self.weights.t(), solidx,
                                        self.outdtype)
         elif libtype == 'rocblas':
             c = rocsolidxgemm.rocb_mm(self.inp, self.weights.t(), solidx)
-        if torch.allclose(c.to(torch.float32), 
-                          ref.to(torch.float32), 
-                          atol=self.atol, 
+        if torch.allclose(c.to(torch.float32),
+                          ref.to(torch.float32),
+                          atol=self.atol,
                           rtol=self.rtol):
             return True
 
@@ -269,7 +269,8 @@ class GemmTuner:
 
     def find_best_sols(self):
         df = self.gemm_problems
-        soldf = pd.DataFrame(columns=['libtype', 'solidx', 'soltimems', 'indtype', 'outdtype'])
+        soldf = pd.DataFrame(
+            columns=['libtype', 'solidx', 'soltimems', 'indtype', 'outdtype'])
         for i in range(len(df)):
             ds = df.loc[i, :]
             gemmobj = Gemm(ds['M'],
