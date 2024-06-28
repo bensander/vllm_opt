@@ -42,6 +42,7 @@ import argparse
 from vllm import LLM, SamplingParams
 import math
 import operator
+from vllm.model_executor.layers.quantization import QUANTIZATION_METHODS
 
 def get_wikitext2_text(tokenizer):
     with open(args.data) as f:
@@ -55,11 +56,10 @@ def vllm_init(args):
     llm = LLM(
         model=args.model,
         tokenizer=None,
-        tensor_parallel_size=args.tensor_parallel_size,
-        trust_remote_code=args.trust_remote_code,
-        dtype=args.dtype,
         kv_cache_dtype=args.kv_cache_dtype,
-        scales_path=args.kv_cache_scales_path if args.kv_cache_scales_path!='' else None,
+        quantization_param_path=args.kv_cache_scales_path if args.kv_cache_scales_path!='' else None,
+        quantization=args.quantization,
+        quantized_weights_path=args.quantized_weights_path,
         enforce_eager = args.enforce_eager
     )
 
@@ -135,6 +135,10 @@ if __name__ == "__main__":
     parser.add_argument('--enforce-eager',
                         action='store_true',
                         help='enforce eager mode and disable CUDA graph')
+    parser.add_argument('--quantization',
+                        '-q',
+                        choices=[*QUANTIZATION_METHODS, None],
+                        default=None)
     parser.add_argument(
         "--kv-cache-dtype",
         type=str,
@@ -142,6 +146,13 @@ if __name__ == "__main__":
         default='auto',
         help=
         'Data type for kv cache storage. If "auto", will use model data type.')
+    parser.add_argument(
+        '--quantized-weights-path',
+        type=str,
+        default=None,
+        help='Path to the safetensor file containing the quantized weights '
+        'and scaling factors. This should generally be supplied, when '
+        'quantization is FP8.')
     args = parser.parse_args()
 
     main(args)
