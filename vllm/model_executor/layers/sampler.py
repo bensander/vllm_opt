@@ -17,7 +17,6 @@ from vllm.sequence import (CompletionSequenceGroupOutput, Logprob,
 # (num_token_ids, num_parent_ids) per sequence group.
 SampleResultType = List[Tuple[List[int], List[int]]]
 
-
 class Sampler(nn.Module):
     """Samples the next tokens from the model's outputs.
 
@@ -303,6 +302,23 @@ def _greedy_sample(
         sample_idx += num_parent_seqs
     return results
 
+def _forced_sample(
+    selected_seq_groups: List[Tuple[List[int], SamplingParams]],
+    samples: torch.Tensor,
+) -> List[Tuple[List[int], List[int]]]:
+    samples = samples.tolist()
+    sample_idx = 0
+    results = []
+    for seq_group in selected_seq_groups:
+        seq_ids, _ = seq_group
+        num_parent_seqs = len(seq_ids)
+        assert num_parent_seqs == 1, (
+            "Forced sampling should have only one seq.")
+        parent_ids = list(range(num_parent_seqs))
+        next_token_ids = [samples[sample_idx]]
+        results.append((next_token_ids, parent_ids))
+        sample_idx += num_parent_seqs
+    return results
 
 def _random_sample(
     selected_seq_groups: List[SequenceGroupToSample],
@@ -490,7 +506,9 @@ def _sample_with_torch(
         seq_groups = [sampling_metadata.seq_groups[i] for i in seq_group_id]
         sample_metadata[sampling_type] = (seq_group_id, seq_groups)
         long_sample_indices = sample_indices.long()
-        if sampling_type == SamplingType.GREEDY:
+        if sampling_type == SamplingType.FORCED:
+            forced_samples = torch.tensor([seq_groups[0][1].future_context[0][len(sampling_metadata.seq_data[seq_groups[0][0][0]].output_token_ids)]],device='cuda:0') #
+        elif sampling_type == SamplingType.GREEDY:
             greedy_samples = torch.argmax(logprobs[long_sample_indices],
                                           dim=-1)
 
@@ -533,12 +551,13 @@ def _sample_with_torch(
             raise ValueError(f"Unsupported sampling type: {sampling_type}")
 
     # GPU<->CPU sync happens in the loop below.
-    # This also converts the sample output to Python objects.
     for sampling_type in SamplingType:
         if sampling_type not in sample_metadata:
             continue
         (seq_group_id, seq_groups) = sample_metadata[sampling_type]
-        if sampling_type == SamplingType.GREEDY:
+        if sampling_type == SamplingType.FORCED:
+            sample_results = _forced_sample(seq_groups, forced_samples)
+        elif sampling_type == SamplingType.GREEDY:
             sample_results = _greedy_sample(seq_groups, greedy_samples)
         elif sampling_type in (SamplingType.RANDOM, SamplingType.RANDOM_SEED):
             sample_results = _random_sample(seq_groups,
