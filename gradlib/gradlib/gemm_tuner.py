@@ -3,7 +3,7 @@ import json
 import os
 from pathlib import Path
 
-import torch # isort split
+import torch  # isort: split
 import hipbsolidxgemm
 import pandas as pd
 import rocsolidxgemm
