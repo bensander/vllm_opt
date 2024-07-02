@@ -182,6 +182,12 @@ torch::Tensor fp8_gemm(torch::Tensor& a, torch::Tensor& b,
   return result;
 }
 
+void* workspace;
+
+void create_workspace() {
+  CHECK_HIP_ERROR(hipMalloc(&workspace, 2 * 128 * 1024 * 1024));
+}
+
 torch::Tensor fp8_gemm_16(torch::Tensor& a, torch::Tensor& b,
                           torch::Tensor& scaleA, torch::Tensor& scaleB,
                           int algo_idx) {
@@ -314,7 +320,7 @@ torch::Tensor fp8_gemm_16(torch::Tensor& a, torch::Tensor& b,
   TORCH_CUDABLAS_CHECK(
       hipblaslt_ext::getAlgosFromIndex(handle, algoIndex, tmpAlgo));
 
-  CHECK_HIPBLASLT_ERROR(gemm.initialize(tmpAlgo[0].algo, nullptr));
+  CHECK_HIPBLASLT_ERROR(gemm.initialize(tmpAlgo[0].algo, workspace));
   CHECK_HIPBLASLT_ERROR(gemm.run(stream));
 
   // hipFree(d_scaleA);
