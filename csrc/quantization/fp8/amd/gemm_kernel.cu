@@ -37,20 +37,21 @@
 static void* workspace = nullptr;
 static size_t workspace_size;
 
-// Copied from https://github.com/pytorch/pytorch/blob/main/aten/src/ATen/cuda/tunable/GemmHipblaslt.h
+// Copied from
+// https://github.com/pytorch/pytorch/blob/main/aten/src/ATen/cuda/tunable/GemmHipblaslt.h
 static size_t get_hipblaslt_workspace_size() {
-  static const char * env = getenv("HIPBLASLT_WORKSPACE_SIZE");
+  static const char* env = getenv("HIPBLASLT_WORKSPACE_SIZE");
   // 256MB is max workspace size allowed for hipblaslt
   // hipblaslt-bench uses 32MB
   // recommendation from hipblaslt author was 76MB
-  size_t workspace_size = 32*1024;  // going with 32MB
+  size_t workspace_size = 32 * 1024;  // going with 32MB
   if (env) {
     try {
       workspace_size = std::stoi(env);
-    } catch(std::invalid_argument const& e) {
+    } catch (std::invalid_argument const& e) {
       TORCH_WARN("invalid HIPBLASLT_WORKSPACE_SIZE,",
                  " using default workspace size of ", workspace_size, " KiB.");
-    } catch(std::out_of_range const& e) {
+    } catch (std::out_of_range const& e) {
       TORCH_WARN("HIPBLASLT_WORKSPACE_SIZE out of range,",
                  " using default workspace size of ", workspace_size, " KiB.");
     }
@@ -58,13 +59,11 @@ static size_t get_hipblaslt_workspace_size() {
   return workspace_size * 1024;
 }
 
-
 void create_workspace() {
   workspace_size = get_hipblaslt_workspace_size();
   if (workspace_size > 0)
     CHECK_HIP_ERROR(hipMalloc(&workspace, workspace_size));
 }
-
 
 torch::Tensor fp8_gemm(torch::Tensor& a, torch::Tensor& b,
                        torch::Tensor& scaleA, torch::Tensor& scaleB,
