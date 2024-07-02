@@ -34,7 +34,7 @@
     }
 #endif
 
-static void* workspace;
+static void* workspace = nullptr;
 static size_t workspace_size;
 
 // Copied from https://github.com/pytorch/pytorch/blob/main/aten/src/ATen/cuda/tunable/GemmHipblaslt.h
@@ -61,7 +61,8 @@ static size_t get_hipblaslt_workspace_size() {
 
 void create_workspace() {
   workspace_size = get_hipblaslt_workspace_size();
-  CHECK_HIP_ERROR(hipMalloc(&workspace, workspace_size));
+  if (workspace_size > 0)
+    CHECK_HIP_ERROR(hipMalloc(&workspace, workspace_size));
 }
 
 
