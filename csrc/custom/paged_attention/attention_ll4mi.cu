@@ -1,10 +1,11 @@
-#if defined(__gfx942__)
 // TODO: add license terms
 #include <torch/extension.h>
 #include <ATen/cuda/CUDAContext.h>
 #include <c10/cuda/CUDAGuard.h>
 
 #include <algorithm>
+
+#if defined(__gfx942__)
 
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
@@ -947,4 +948,32 @@ void paged_attention_custom(
 #undef MAX
 #undef MIN
 #undef DIVIDE_ROUND_UP
+
+#else //defined(__gfx942__)
+
+void paged_attention_custom(
+    torch::Tensor& out,         // [num_seqs, num_heads, head_size]
+    torch::Tensor& exp_sums,    // [num_seqs, num_heads, max_num_partitions]
+    torch::Tensor& max_logits,  // [num_seqs, num_heads, max_num_partitions]
+    torch::Tensor&
+        tmp_out,  // [num_seqs, num_heads, max_num_partitions, head_size]
+    torch::Tensor& query,  // [num_seqs, num_heads, head_size]
+    torch::Tensor&
+        key_cache,  // [num_blocks, num_heads, head_size/x, block_size, x]
+    torch::Tensor&
+        value_cache,  // [num_blocks, num_heads, head_size, block_size]
+    int num_kv_heads, float scale,
+    torch::Tensor& block_tables,  // [num_seqs, max_num_blocks_per_seq]
+    torch::Tensor& context_lens,  // [num_seqs]
+    int block_size, int max_context_len,
+#if 0
+  torch::Tensor& qk_out,
+  torch::Tensor& softmax_out,
+#endif
+    const c10::optional<torch::Tensor>& alibi_slopes,
+    const std::string& kv_cache_dtype) {
+  TORCH_CHECK(false, "paged_attention_custom not supported on current arch");
+}
+
+
 #endif

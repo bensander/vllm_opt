@@ -8,7 +8,10 @@ from hipbsolidxgemm import hipb_create_extension, hipb_mm
 from rocsolidxgemm import rocb_create_extension, rocb_mm
 
 from vllm import _custom_C
+from vllm.utils import is_hip
 
+use_skinny = is_hip() and \
+                    (os.getenv("VLLM_USE_ROCM_SKINNY_GEMM", "1") == "1")
 
 class TunedGemm:
 
@@ -52,6 +55,8 @@ class TunedGemm:
         return self.solids.get((m, n, k), (0, 0))
 
     def apply_skinny(self, m, n, k, inp_view, weights):
+        if not use_skinny:
+            return None
         if inp_view.dtype != torch.float16 or k % 8 != 0:
             return None
         if m > 8 and n <= 4:
