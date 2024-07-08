@@ -49,6 +49,23 @@ struct Vec<uint16_t, 8> {
   using Type = uint4;
 };
 
+template <>
+struct Vec<_Float16, 1> {
+  using Type = uint16_t;
+};
+template <>
+struct Vec<_Float16, 2> {
+  using Type = uint32_t;
+};
+template <>
+struct Vec<_Float16, 4> {
+  using Type = uint2;
+};
+template <>
+struct Vec<_Float16, 8> {
+  using Type = uint4;
+};
+
 // FP32 accumulator vector types corresponding to Vec.
 template <>
 struct FloatVec<uint16_t> {

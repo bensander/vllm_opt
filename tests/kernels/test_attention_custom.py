@@ -3,11 +3,25 @@ from typing import Optional, Tuple
 
 import pytest
 import torch
-from allclose_default import get_default_atol, get_default_rtol
 
 from vllm._C import cache_ops, ops
 from vllm._custom_C import paged_attention_custom
 from vllm.utils import get_max_shared_memory_bytes, is_hip
+
+default_atol = {torch.float16: 1e-3, torch.bfloat16: 1e-3, torch.float: 1e-5}
+default_rtol = {
+    torch.float16: 1e-3,
+    torch.bfloat16: 1.6e-2,
+    torch.float: 1.3e-6
+}
+
+
+def get_default_atol(output) -> float:
+    return default_atol[output.dtype]
+
+
+def get_default_rtol(output) -> float:
+    return default_rtol[output.dtype]
 
 FLOAT32_BYTES = torch.finfo(torch.float).bits // 8
 # This will change depending on the compute capability.
@@ -28,7 +42,7 @@ NUM_HEADS = [(8 * x, 8) for x in range(1, 17)]  # Arbitrary values for testing
 HEAD_SIZES = [128]
 BLOCK_SIZES = [16]
 USE_ALIBI = [False, True]
-KV_CACHE_DTYPE = ["auto"]
+KV_CACHE_DTYPE = ["auto", "fp8"]
 SEEDS = [0]
 CUDA_DEVICES = [
     f"cuda:{i}" for i in range(1 if torch.cuda.device_count() == 1 else 2)
@@ -241,6 +255,7 @@ def test_paged_attention(
                 max_context_len,
                 alibi_slopes,
                 kv_cache_dtype,
+                kv_scale,
             )
     else:
         raise AssertionError(f"Unknown version: {version}")
