@@ -26,6 +26,7 @@ class Fp8RocmConfig(QuantizationConfig):
     def __init__(self) -> None:
         self._tuned = {}
         gemm_type = os.getenv("FP8_GEMM", "fp8_16")
+        vllm_ops.create_workspace()
         if gemm_type == "fp8_8":
             self.gemm_method = Fp8RocmLinearMethod.apply_fp8_8
             tuned_filename = "/tmp/tuned_fp8_8.csv"
@@ -180,6 +181,14 @@ class Fp8RocmLinearMethod(LinearMethodBase):
         weight = layer.weight
         layer.weight = Parameter(weight, requires_grad=False)
 
+        if layer.weight.dtype == torch.float8_e4m3fnuz:
+            layer.activation_scaling_factor = Parameter(
+                layer.activation_scaling_factor * 2.0, requires_grad=False)
+            layer.weights_scaling_factor = Parameter(
+                layer.weights_scaling_factor * 2.0, requires_grad=False)
+            layer.output_scaling_factor = Parameter(
+                layer.output_scaling_factor / 2.0, requires_grad=False)
+
     def scales_shard_indexer(
             self, param: torch.Tensor, loaded_weight: torch.Tensor,
             shard_id: Union[str, int]) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -267,15 +276,14 @@ class Fp8RocmLinearMethod(LinearMethodBase):
         x: torch.Tensor,
         bias: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        weight: torch.Tensor = layer.weight
-        if weight.dtype == torch.float8_e4m3fnuz:
-            asf: torch.Tensor = layer.activation_scaling_factor * 2
-            wsf: torch.Tensor = layer.weights_scaling_factor * 2
-            osf: torch.Tensor = layer.output_scaling_factor / 2
+        if layer.weight.dtype == torch.float8_e4m3fnuz:
 
-            return self._config.gemm_method(self, x, weight, asf, wsf, osf)
+            return self._config.gemm_method(self, x, layer.weight,
+                                            layer.activation_scaling_factor,
+                                            layer.weights_scaling_factor,
+                                            layer.output_scaling_factor)
 
-        return F.linear(x, weight, bias)
+        return F.linear(x, layer.weight, bias)
 
 
 def _per_tensor_quantize(tensor: torch.Tensor,
