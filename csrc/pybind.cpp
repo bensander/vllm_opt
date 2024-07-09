@@ -37,6 +37,9 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
           "Apply GPT-NeoX or GPT-J style rotary embedding to query and key "
           "(supports multiple loras)");
 
+  // RANSMITH MODIFICATION
+  ops.def("awq_dequantize", &awq_dequantize, "Dequantization for AWQ");
+
 // Quantization ops
 #ifndef USE_ROCM
   ops.def("aqlm_gemm", &aqlm_gemm, "Quantized GEMM for AQLM");
@@ -50,7 +53,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
           "gptq_marlin Optimized Quantized GEMM for GPTQ");
   ops.def("gptq_marlin_repack", &gptq_marlin_repack,
           "gptq_marlin repack from GPTQ");
-  ops.def("awq_dequantize", &awq_dequantize, "Dequantization for AWQ");
   ops.def("cutlass_scaled_mm_dq", &cutlass_scaled_mm_dq,
           "CUTLASS w8a8 GEMM, supporting symmetric per-tensor or "
           "per-row/column quantization.");

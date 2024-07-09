@@ -5,8 +5,8 @@ import torch
 try:
     from vllm._C import cache_ops as vllm_cache_ops
     from vllm._C import ops as vllm_ops
-except ImportError:
-    pass
+except ImportError as e:
+     print(f"Failed to import from vllm._C with {e}")
 
 
 # activation ops
@@ -126,15 +126,24 @@ def fused_add_rms_norm(input: torch.Tensor, residual: torch.Tensor,
 # quantization ops
 # awq
 def awq_dequantize(qweight: torch.Tensor, scales: torch.Tensor,
-                   zeros: torch.Tensor, split_k_iters: int, thx: int,
+                zeros: torch.Tensor, split_k_iters: int, thx: int,
                    thy: int) -> torch.Tensor:
-    return vllm_ops.awq_dequantize(qweight, scales, zeros, split_k_iters, thx,
-                                   thy)
+    
+    print(f"awq_dequantize:qweight.size={qweight.size()}, scales.size={scales.size()}, zeros.size={zeros.size()}")
+    return torch.zeros(qweight.shape[0], scales.shape[1], device=qweight.device, dtype = torch.float16)
+    #return torch.empty_like(qweight, dtype=torch.float16)
+    # return vllm_ops.awq_dequantize(qweight, scales, zeros, split_k_iters, thx,
+                                   # thy)
 
 
 def awq_gemm(input: torch.Tensor, qweight: torch.Tensor, qzeros: torch.Tensor,
              scales: torch.Tensor, split_k_iters: int) -> torch.Tensor:
-    return vllm_ops.awq_gemm(input, qweight, qzeros, scales, split_k_iters)
+    print(f"awq_gemm:input.size = {input.size()}, qweight.size = {qweight.size()}, qzeros.size = {qzeros.size()}, scales.size = {scales.size()}, split_k_iters = {split_k_iters}")
+    # return torch.zeros(qweight.shape[0], qzeros.shape[1], device=qweight.device, dtype = torch.float16)
+    return torch.zeros((input.shape[0], qweight.shape[1] * 8), device=qweight.device, dtype = torch.float16)
+    # return torch.zeros(input.shape[0], qweight.shape[1], device=qweight.device, dtype = torch.float16)
+
+    # return vllm_ops.awq_gemm(input, qweight, qzeros, scales, split_k_iters)
 
 
 # gptq
