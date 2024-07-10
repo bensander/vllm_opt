@@ -206,7 +206,7 @@ torch::Tensor fp8_gemm(torch::Tensor& a, torch::Tensor& b,
   auto status = gemm.isAlgoSupported(tmpAlgo[0].algo, req_workspace_size);
   TORCH_CHECK(status == HIPBLAS_STATUS_SUCCESS, "Solution not supported");
   if (req_workspace_size > workspace_size) {
-    workspace_size = req_workspace_size;    
+    workspace_size = req_workspace_size + 32 * 1024 * 1024;
     CHECK_HIP_ERROR(hipFree(workspace));
     CHECK_HIP_ERROR(hipMalloc(&workspace, workspace_size));
   }
@@ -356,7 +356,7 @@ torch::Tensor fp8_gemm_16(torch::Tensor& a, torch::Tensor& b,
   auto status = gemm.isAlgoSupported(tmpAlgo[0].algo, req_workspace_size);
   TORCH_CHECK(status == HIPBLAS_STATUS_SUCCESS, "Solution not supported");
   if (req_workspace_size > workspace_size) {
-    workspace_size = req_workspace_size;    
+    workspace_size = req_workspace_size + 32 * 1024 * 1024;
     CHECK_HIP_ERROR(hipFree(workspace));
     CHECK_HIP_ERROR(hipMalloc(&workspace, workspace_size));
   }
