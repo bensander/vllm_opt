@@ -201,6 +201,15 @@ torch::Tensor fp8_gemm(torch::Tensor& a, torch::Tensor& b,
   std::vector<hipblasLtMatmulHeuristicResult_t> tmpAlgo;
   TORCH_CUDABLAS_CHECK(
       hipblaslt_ext::getAlgosFromIndex(handle, algoIndex, tmpAlgo));
+  
+  size_t req_workspace_size = 0;
+  auto status = gemm.isAlgoSupported(tmpAlgo[0].algo, req_workspace_size);
+  TORCH_CHECK(status == HIPBLAS_STATUS_SUCCESS, "Solution not supported");
+  if (req_workspace_size > workspace_size) {
+    workspace_size = req_workspace_size;    
+    CHECK_HIP_ERROR(hipFree(workspace));
+    CHECK_HIP_ERROR(hipMalloc(&workspace, workspace_size));
+  }
 
   CHECK_HIPBLASLT_ERROR(gemm.initialize(tmpAlgo[0].algo, workspace));
   CHECK_HIPBLASLT_ERROR(gemm.run(stream));
@@ -342,6 +351,15 @@ torch::Tensor fp8_gemm_16(torch::Tensor& a, torch::Tensor& b,
   std::vector<hipblasLtMatmulHeuristicResult_t> tmpAlgo;
   TORCH_CUDABLAS_CHECK(
       hipblaslt_ext::getAlgosFromIndex(handle, algoIndex, tmpAlgo));
+
+  size_t req_workspace_size = 0;
+  auto status = gemm.isAlgoSupported(tmpAlgo[0].algo, req_workspace_size);
+  TORCH_CHECK(status == HIPBLAS_STATUS_SUCCESS, "Solution not supported");
+  if (req_workspace_size > workspace_size) {
+    workspace_size = req_workspace_size;    
+    CHECK_HIP_ERROR(hipFree(workspace));
+    CHECK_HIP_ERROR(hipMalloc(&workspace, workspace_size));
+  }
 
   CHECK_HIPBLASLT_ERROR(gemm.initialize(tmpAlgo[0].algo, workspace));
   CHECK_HIPBLASLT_ERROR(gemm.run(stream));
