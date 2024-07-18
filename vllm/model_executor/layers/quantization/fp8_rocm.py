@@ -29,12 +29,9 @@ class Fp8RocmConfig(QuantizationConfig):
         vllm_ops.create_workspace()
 
         self.shapes = []
-        if os.getenv("TUNE_FP8") == "1":
-            try:
-                self.shapes = pd.read_csv(
-                    "/tmp/fp8_shapes.csv").values.tolist()
-            except (IOError, pd.errors.EmptyDataError, pd.errors.ParserError):
-                pass
+        if os.getenv("TUNE_FP8") == "1" and os.path.isfile(
+                "/tmp/fp8_shapes.csv"):
+            self.shapes = pd.read_csv("/tmp/fp8_shapes.csv").values.tolist()
 
         if gemm_type == "fp8_8":
             self.gemm_method = Fp8RocmLinearMethod.apply_fp8_8
@@ -92,11 +89,10 @@ class Fp8RocmConfig(QuantizationConfig):
         return []
 
     def save_shape(self, m, n, k):
-        if os.getenv("TUNE_FP8") == "1":
-            if [m, n, k] not in self.shapes:
-                self.shapes.append([m, n, k])
-                df = pd.DataFrame(self.shapes, columns=["M", "N", "K"])
-                df.to_csv("/tmp/fp8_shapes.csv", index=False)
+        if os.getenv("TUNE_FP8") == "1" and [m, n, k] not in self.shapes:
+            self.shapes.append([m, n, k])
+            df = pd.DataFrame(self.shapes, columns=["M", "N", "K"])
+            df.to_csv("/tmp/fp8_shapes.csv", index=False)
 
 
 class Fp8RocmLinearMethod(LinearMethodBase):
