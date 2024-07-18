@@ -466,7 +466,16 @@ void fp8_mm(torch::Tensor& a, torch::Tensor& b, torch::Tensor& result,
   CHECK_HIPBLASLT_ERROR(gemm.setProblem(m, n, k, 1, lda, ldb, ldc, ldc, strideA,
                                         strideB, strideC, strideC, epilogue,
                                         inputs, problem));
-
+  if (algo_idx == 0) {
+    constexpr int request_solutions = 1;
+    std::vector<hipblasLtMatmulHeuristicResult_t> heuristicResult;
+    heuristicResult.reserve(request_solutions);
+    CHECK_HIPBLASLT_ERROR(
+        gemm.algoGetHeuristic(request_solutions, gemmPref, heuristicResult));
+    static size_t solSize = 0;
+    algo_idx = hipblaslt_ext::getIndexFromAlgo(heuristicResult[0].algo);
+    TORCH_CHECK(!heuristicResult.empty(), "No valid solution found!");
+  }
   std::vector<int> algoIndex(1);
   algoIndex[0] = solidx;
   std::vector<hipblasLtMatmulHeuristicResult_t> tmpAlgo;
