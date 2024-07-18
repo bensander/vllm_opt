@@ -405,6 +405,7 @@ __global__ void __launch_bounds__(64)
   int index2 = col + row * N;
   int* B_ptr2 = B + index2;
 
+  // row / (qweight.size[0] / scales.size[0])
   int index3 = col + (int)(row / G) * N;
   int* zeros_ptr2 = zeros + index3;
   int index4 = 8 * col + (int)(row / G) * N * 8;

@@ -129,8 +129,17 @@ def awq_dequantize(qweight: torch.Tensor, scales: torch.Tensor,
                 zeros: torch.Tensor, split_k_iters: int, thx: int,
                    thy: int) -> torch.Tensor:
     
-    print(f"awq_dequantize:qweight.size={qweight.size()}, scales.size={scales.size()}, zeros.size={zeros.size()}")
-    return torch.zeros(qweight.shape[0], scales.shape[1], device=qweight.device, dtype = torch.float16)
+    print(f"awq_dequantize:qweight.size={qweight.size()},"
+          f"qweight.dtype = {qweight.dtype},"
+          f"scales.size={scales.size()},"
+          f"scales.dtype={scales.dtype},"
+          f"zeros.size={zeros.size()},"
+          f"zeros.dtype={zeros.dtype}",
+          f"split_k_iters={split_k_iters},"
+          f"thx={thx},",
+          f"thy={thy}")
+    # return torch.zeros(qweight.shape[0], scales.shape[1], device=qweight.device, dtype = torch.float16)
+    return torch.zeros(qweight.shape[0], 8 * qweight.shape[1], device=qweight.device, dtype = torch.float16)
     #return torch.empty_like(qweight, dtype=torch.float16)
     # return vllm_ops.awq_dequantize(qweight, scales, zeros, split_k_iters, thx,
                                    # thy)
