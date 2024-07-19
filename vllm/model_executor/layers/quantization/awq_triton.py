@@ -19,9 +19,11 @@ def awq_dequantize_kernel(qweight_ptr,   # quantized matrix
                           BLOCK_SIZE_Y: tl.constexpr):
     pid_y = tl.program_id(axis=0)
     pid_x = tl.program_id(axis=1)
+
     # print(f"pid_y = {pid_y}, pid_x = {pid_x}")
     # print(f"BLOCK_SIZE_Y = {BLOCK_SIZE_Y}, BLOCK_SIZE_X = {BLOCK_SIZE_X}")
 
+    # qweight offsets for qweight_ptr
     offsets_y = pid_y * BLOCK_SIZE_Y + tl.arange(0, BLOCK_SIZE_Y)
     offsets_x = pid_x * BLOCK_SIZE_X + tl.arange(0, BLOCK_SIZE_X)
     offsets = num_cols  * offsets_y[:, None] + offsets_x[None, :]
@@ -33,7 +35,8 @@ def awq_dequantize_kernel(qweight_ptr,   # quantized matrix
     scale_offsets_y = (pid_y * BLOCK_SIZE_Y 
                       + tl.arange(0, BLOCK_SIZE_Y) //group_size)
     scale_offsets_x = pid_x * BLOCK_SIZE_X + tl.arange(0, BLOCK_SIZE_X) * 8
-    scale_offsets = num_cols * scale_offsets_y[:, None] + scale_offsets_x[None, :]
+    scale_offsets = (num_cols * scale_offsets_y[:, None] +
+                     scale_offsets_x[None,:])
 
     # Zero offsets for scales_ptr
     zero_offsets_y = (pid_y * BLOCK_SIZE_Y 
@@ -42,9 +45,10 @@ def awq_dequantize_kernel(qweight_ptr,   # quantized matrix
     zero_offsets = num_cols * zero_offsets_y[:, None] + zero_offsets_x[None, :]
 
     # Output offsets for result_ptr
-    out_offsets_y = pid_y * BLOCK_SIZE_Y + tl.arange(0, BLOCK_SIZE_Y)
-    out_offsets_x = pid_x * BLOCK_SIZE_X * 8 + tl.arange(0, BLOCK_SIZE_X) * 8
-    out_offsets = num_cols * out_offsets_y[:, None] + out_offsets_x[None, :]
+    result_offsets_y = pid_y * BLOCK_SIZE_Y + tl.arange(0, BLOCK_SIZE_Y)
+    result_offsets_x = pid_x * BLOCK_SIZE_X * 8 + tl.arange(0, BLOCK_SIZE_X) * 8
+    result_offsets = (num_cols * result_offsets_y[:, None] +
+            result_offsets_x[None, :])
 
     # print(f"offsets = {offsets}")
 
@@ -58,31 +62,64 @@ def awq_dequantize_kernel(qweight_ptr,   # quantized matrix
     iweights = tl.load(qweight_ptr + offsets, masks)
     zeros = tl.load(zeros_ptr + zero_offsets, masks)
 
+    # There are 8 values packed per int, loop over them and
+    # do block-wise computations w.r.t the order and write
+    # the results out to result_ptr w.r.t. the reverse order.
     for i in range(8):
         shift = i
-        reverse_order = 0
-        if i == 0:
-            reverse_order = 0
-        elif i == 1:
-            reverse_order = 4
-        elif i == 2:
-            reverse_order = 1 
-        elif i == 3:
-            reverse_order = 5
-        elif i == 4:
-            reverse_order = 2
-        elif i == 5:
-            reverse_order = 6
-        elif i == 6:
-            reverse_order = 3
-        elif i == 7:
-            reverse_order = 7
 
-        scales = tl.load(scales_ptr + scale_offsets + reverse_order, masks)
+        # Use reverse_awq_order to write result in reverse_awq_order.
+        reverse_awq_order = 0
+        if i == 0:
+            reverse_awq_order = 0
+        elif i == 1:
+            reverse_awq_order = 4
+        elif i == 2:
+            reverse_awq_order = 1 
+        elif i == 3:
+            reverse_awq_order = 5
+        elif i == 4:
+            reverse_awq_order = 2
+        elif i == 5:
+            reverse_awq_order = 6
+        elif i == 6:
+            reverse_awq_order = 3
+        elif i == 7:
+            reverse_awq_order = 7
+
+        # Use awq_order to load scales in awq_order.
+        awq_order = 0
+        if i == 0:
+            awq_order = 0
+        elif i == 1:
+            awq_order = 2 
+        elif i == 2:
+            awq_order = 4 
+        elif i == 3:
+            awq_order = 6
+        elif i == 4:
+            awq_order = 1
+        elif i == 5:
+            awq_order = 3
+        elif i == 6:
+            awq_order = 5
+        elif i == 7:
+            awq_order = 7
+
+        # Load the scales in AWQ order so that the equation:
+        #  (iweights_shift - zeros_shift) * scales
+        # computes the correct values.
+        scales = tl.load(scales_ptr + scale_offsets + awq_order, masks)
+
+        # Shift and extract the packed value, but its still in AWQ order.
         iweights_shifted = ((iweights >> shift) & 0xF)
         zeros_shifted = ((zeros >> shift) & 0xF)
-        tl.store(result_ptr + out_offsets,
-                (iweights_shifted - zeros_shifted) * scales, masks)
+
+        # Compute the dequantized results and write them in reverse
+        # AWQ order.
+        tl.store(result_ptr + result_offsets + reverse_awq_order,
+                 (iweights_shifted - zeros_shifted) * scales,
+                 masks)
 
 # Example input: 
 #   qweight.size=torch.Size([3584, 576]),
@@ -144,11 +181,11 @@ def main():
                          qweight_cols),
                          dtype=qweight_dtype,
                          device=device)
-    scales = torch.ones(scales_rows,
+    scales = torch.zeros(scales_rows,
                         scales_cols,
                         dtype=scales_dtype,
                         device=device)
-    zeros = torch.ones(zeros_rows,
+    zeros = torch.zeros(zeros_rows,
                        zeros_cols,
                        dtype=zeros_dtype,
                        device=device)
