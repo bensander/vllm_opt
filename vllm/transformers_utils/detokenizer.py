@@ -176,14 +176,20 @@ def _convert_tokens_to_string_with_added_encoders(
             continue
         if token in tokenizer.get_added_vocab():
             if current_sub_text:
-                sub_text = tokenizer.convert_tokens_to_string(current_sub_text)
+                if isinstance(current_sub_text[0], str):
+                    sub_text = "".join(current_sub_text)
+                else:
+                    sub_text = tokenizer.convert_tokens_to_string(current_sub_text)
                 sub_texts.append(sub_text)
                 current_sub_text = []
             sub_texts.append(token)
         else:
             current_sub_text.append(token)
     if current_sub_text:
-        sub_text = tokenizer.convert_tokens_to_string(current_sub_text)
+        if isinstance(current_sub_text[0], str):
+            sub_text = "".join(current_sub_text)
+        else:
+            sub_text = tokenizer.convert_tokens_to_string(current_sub_text)
         sub_texts.append(sub_text)
     if spaces_between_special_tokens:
         return " ".join(sub_texts)
@@ -284,10 +290,14 @@ def detokenize_incrementally(
     # the decode which decide to add a space or not depending on the
     # surrounding ids.
     if tokenizer.is_fast or not tokenizer.get_added_vocab():
-        prefix_text = tokenizer.convert_tokens_to_string(
-            output_tokens[prefix_offset:read_offset])
-        new_text = tokenizer.convert_tokens_to_string(
-            output_tokens[prefix_offset:])
+        if isinstance(output_tokens[0], str):
+            prefix_text = "".join(output_tokens[prefix_offset:read_offset])
+            new_text = "".join(output_tokens[prefix_offset:])
+        else:
+            prefix_text = tokenizer.convert_tokens_to_string(
+                output_tokens[prefix_offset:read_offset])
+            new_text = tokenizer.convert_tokens_to_string(
+                output_tokens[prefix_offset:])
     else:
         prefix_text = _convert_tokens_to_string_with_added_encoders(
             tokenizer,
