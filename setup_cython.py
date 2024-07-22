@@ -20,11 +20,20 @@ infiles += [
         "vllm/core/block_manager_v1.py",
         ]
 
+infiles += [
+        "vllm/model_executor/layers/sampler.py",
+        "vllm/sampling_params.py",
+        "vllm/utils.py",
+        ]
+
 
 setup(
-        ext_modules=cythonize(infiles, annotate=True, force=True,
+        ext_modules=cythonize(infiles, annotate=False, force=True,
             compiler_directives= {
                 'language_level' : "3",
                 'infer_types' : True
                 })
 )
+
+
+# example usage: python3 setup_cython.py build_ext --inplace
