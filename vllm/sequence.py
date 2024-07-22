@@ -502,7 +502,7 @@ class SequenceGroup:
         #   in TPOT, rather than recalculating TTFT (since from the )
         #   POV of the user, there is simply a long generation delay.
         if (self.metrics.first_token_time is None
-                and self.get_seq0().next(iter(self.seqs_dict.values())).get_output_len() == 1):
+                and next(iter(self.seqs_dict.values())).get_output_len() == 1):
             self.metrics.first_token_time = time
 
     def maybe_set_first_scheduled_time(self, time: float) -> None:
