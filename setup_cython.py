@@ -12,6 +12,7 @@ infiles += [
 	"vllm/engine/llm_engine.py",
 	"vllm/transformers_utils/detokenizer.py",
         "vllm/engine/output_processor/single_step.py",
+        "vllm/engine/output_processor/util.py",
         "vllm/outputs.py",
         "vllm/engine/output_processor/stop_checker.py",
     ]
