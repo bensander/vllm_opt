@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 from setuptools import setup
 from Cython.Build import cythonize
 
@@ -29,10 +31,13 @@ infiles += [
 
 
 setup(
-        ext_modules=cythonize(infiles, annotate=False, force=True,
+        ext_modules=cythonize(
+            infiles,
+            annotate=False, force=True,
             compiler_directives= {
                 'language_level' : "3",
-                'infer_types' : True
+                'infer_types' : True,
+                'profile' : False,
                 })
 )
 
