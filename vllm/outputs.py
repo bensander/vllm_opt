@@ -103,10 +103,26 @@ class RequestOutput:
         if seq_group.sampling_params is None:
             raise ValueError(
                 "Sampling parameters are missing for a CompletionRequest.")
-        seqs = seq_group.get_seqs()
+        seqs = seq_group.seqs_dict.values()
         if len(seqs) == 1:
-            top_n_seqs = seqs
+            seq = next(iter(seqs))
+            # Create the outputs.
+            # NOTE: We need omit logprobs here explicitly because the sequence
+            # always has the logprobs of the sampled tokens even if the
+            # logprobs are not requested.
+            include_logprobs = seq_group.sampling_params.logprobs is not None
+            text_buffer_length = seq_group.sampling_params.output_text_buffer_length
+            outputs = [
+                CompletionOutput(0,
+                                 seq.get_output_text_to_return(text_buffer_length),
+                                 seq.get_output_token_ids(),
+                                 seq.get_cumulative_logprob(),
+                                 seq.output_logprobs if include_logprobs else None,
+                                 "tbd", #SequenceStatus.get_finished_reason(seq.status),
+                                 seq.stop_reason)
+            ]
         else:
+            seqs = list(seqs)
             # Get the top-n sequences.
             n = seq_group.sampling_params.n
             if seq_group.sampling_params.use_beam_search:
@@ -117,21 +133,22 @@ class RequestOutput:
             sorted_seqs = sorted(seqs, key=sorting_key, reverse=True)
             top_n_seqs = sorted_seqs[:n]
 
-        # Create the outputs.
-        # NOTE: We need omit logprobs here explicitly because the sequence
-        # always has the logprobs of the sampled tokens even if the
-        # logprobs are not requested.
-        include_logprobs = seq_group.sampling_params.logprobs is not None
-        text_buffer_length = seq_group.sampling_params.output_text_buffer_length
-        outputs = [
-            CompletionOutput(seqs.index(seq),
-                             seq.get_output_text_to_return(text_buffer_length),
-                             seq.get_output_token_ids(),
-                             seq.get_cumulative_logprob(),
-                             seq.output_logprobs if include_logprobs else None,
-                             SequenceStatus.get_finished_reason(seq.status),
-                             seq.stop_reason) for seq in top_n_seqs
-        ]
+
+            # Create the outputs.
+            # NOTE: We need omit logprobs here explicitly because the sequence
+            # always has the logprobs of the sampled tokens even if the
+            # logprobs are not requested.
+            include_logprobs = seq_group.sampling_params.logprobs is not None
+            text_buffer_length = seq_group.sampling_params.output_text_buffer_length
+            outputs = [
+                CompletionOutput(seqs.index(seq),
+                                 seq.get_output_text_to_return(text_buffer_length),
+                                 seq.get_output_token_ids(),
+                                 seq.get_cumulative_logprob(),
+                                 seq.output_logprobs if include_logprobs else None,
+                                 "tbd", # SequenceStatus.get_finished_reason(seq.status),
+                                 seq.stop_reason) for seq in top_n_seqs
+            ]
 
         # Every sequence in the sequence group should have the same prompt.
         prompt = seq_group.prompt
