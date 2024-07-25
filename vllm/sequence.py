@@ -11,6 +11,8 @@ from vllm.lora.request import LoRARequest
 from vllm.pooling_params import PoolingParams
 from vllm.sampling_params import SamplingParams
 
+import cython
+
 if TYPE_CHECKING:
     import torch
 
@@ -297,8 +299,9 @@ class Sequence:
         self.logical_token_blocks.append(block)
 
     def _append_tokens_to_blocks(self, token_ids: List[int]) -> None:
-        cursor = 0
-        while cursor < len(token_ids):
+        cursor : cython.int = 0
+        token_len : cython.int = len(token_ids)
+        while cursor < token_len:
             if not self.logical_token_blocks:
                 self._append_logical_block()
 
@@ -307,7 +310,7 @@ class Sequence:
                 self._append_logical_block()
                 last_block = self.logical_token_blocks[-1]
 
-            num_empty_slots = last_block.get_num_empty_slots()
+            num_empty_slots = cython.cast(cython.int, last_block.get_num_empty_slots())
             last_block.append_tokens(token_ids[cursor:cursor +
                                                num_empty_slots])
             cursor += num_empty_slots
