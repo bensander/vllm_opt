@@ -39,6 +39,13 @@ PromptLogprobs = List[Optional[Dict[int, Logprob]]]
 # {token_id -> logprob} for each sequence group.
 SampleLogprobs = List[Dict[int, Logprob]]
 
+
+@cython.cfunc
+@cython.inline
+def SequenceStatus_is_finished_cdef(status : cython.int) -> cython.int :
+    rv : cython.int = (status>3)
+    return rv
+
 class SequenceStatus(enum.IntEnum):
     """Status of a sequence."""
     WAITING = 1
@@ -360,7 +367,7 @@ class Sequence:
         return self.get_cumulative_logprob() / (seq_len**length_penalty)
 
     def is_finished(self) -> bool:
-        return SequenceStatus.is_finished(self.status)
+        return SequenceStatus_is_finished_cdef(cython.cast(cython.int, self.status.value))
 
     def fork(self, new_seq_id: int) -> "Sequence":
         new_seq = copy.deepcopy(self)
