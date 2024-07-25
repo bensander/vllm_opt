@@ -39,26 +39,19 @@ PromptLogprobs = List[Optional[Dict[int, Logprob]]]
 # {token_id -> logprob} for each sequence group.
 SampleLogprobs = List[Dict[int, Logprob]]
 
-
 class SequenceStatus(enum.IntEnum):
     """Status of a sequence."""
-    WAITING = enum.auto()
-    RUNNING = enum.auto()
-    SWAPPED = enum.auto()
-    FINISHED_STOPPED = enum.auto()
-    FINISHED_LENGTH_CAPPED = enum.auto()
-    FINISHED_ABORTED = enum.auto()
-    FINISHED_IGNORED = enum.auto()
+    WAITING = 1
+    RUNNING = 2
+    SWAPPED = 3
+    FINISHED_STOPPED = 4
+    FINISHED_LENGTH_CAPPED = 5
+    FINISHED_ABORTED = 6
+    FINISHED_IGNORED = 7
 
     @staticmethod
     def is_finished(status: "SequenceStatus") -> bool:
-        #return status in [
-        #    SequenceStatus.FINISHED_STOPPED,
-        #    SequenceStatus.FINISHED_LENGTH_CAPPED,
-        #    SequenceStatus.FINISHED_ABORTED,
-        #    SequenceStatus.FINISHED_IGNORED,
-        #]
-        return status >= SequenceStatus.FINISHED_STOPPED
+        return status > SequenceStatus.SWAPPED
 
     @staticmethod
     def get_finished_reason(status: "SequenceStatus") -> Union[str, None]:
