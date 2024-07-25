@@ -564,7 +564,7 @@ class SequenceGroup:
 
     def get_num_uncomputed_tokens(self) -> int:
         num_uncomputed_tokens = 0
-        for seq in self.get_seqs():
+        for seq in self.seqs_dict.values():
             if not seq.is_finished():
                 num_uncomputed_tokens += seq.data.get_num_uncomputed_tokens()
         return num_uncomputed_tokens
@@ -599,7 +599,7 @@ class SequenceGroup:
         del self.seqs_dict[seq_id]
 
     def is_finished(self) -> bool:
-        return all(seq.is_finished() for seq in self.get_seqs())
+        return all(seq.is_finished() for seq in self.seqs_dict.values())
 
     def is_prefill(self) -> bool:
         # Every sequence should be in the same stage.
