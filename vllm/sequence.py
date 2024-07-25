@@ -501,7 +501,7 @@ class SequenceGroup:
         self.metrics.last_token_time = now
         return latency
 
-    def maybe_set_first_token_time(self, time: float) -> None:
+    def maybe_set_first_token_time(self, time: float) -> "SequenceGroup":
         """Sets the first token time for Request level timings."""
         # Note: in a case where a sequence_group is swapped and
         #   recomputed, the time between iterations is counted
@@ -510,6 +510,7 @@ class SequenceGroup:
         if (self.metrics.first_token_time is None
                 and next(iter(self.seqs_dict.values())).get_output_len() == 1):
             self.metrics.first_token_time = time
+        return self
 
     def maybe_set_first_scheduled_time(self, time: float) -> None:
         """Sets the first scheduled time and time in queue for Request
