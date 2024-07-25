@@ -698,13 +698,7 @@ class LLMEngine:
         self.scheduler.free_finished_seq_groups()
 
         # Create the outputs.
-        request_outputs: List[Union[RequestOutput,
-                                    EmbeddingRequestOutput]] = []
-        for scheduled_seq_group in scheduled_seq_groups:
-            seq_group = scheduled_seq_group.seq_group
-            seq_group.maybe_set_first_token_time(now)
-            request_output = RequestOutputFactory.create(seq_group)
-            request_outputs.append(request_output)
+        request_outputs = [RequestOutputFactory.create(scheduled_seq_group.seq_group.maybe_set_first_token_time(now)) for scheduled_seq_group in scheduled_seq_groups]
         for seq_group in ignored_seq_groups:
             request_output = RequestOutputFactory.create(seq_group)
             request_outputs.append(request_output)
