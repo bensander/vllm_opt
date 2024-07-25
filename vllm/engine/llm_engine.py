@@ -683,8 +683,9 @@ class LLMEngine:
         now = time.time()
         # Organize outputs by [sequence group][step] instead of
         # [step][sequence group].
-        output_by_sequence_group = create_output_by_sequence_group(
-            output, num_seq_groups=len(scheduled_seq_groups))
+        #output_by_sequence_group = create_output_by_sequence_group(
+        #    output, num_seq_groups=len(scheduled_seq_groups))
+        output_by_sequence_group =  [list(x) for x in zip(*output)]
 
         seq_groups = [scheduled_seq_group.seq_group for scheduled_seq_group in scheduled_seq_groups]
 
