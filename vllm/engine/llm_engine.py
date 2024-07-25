@@ -676,8 +676,9 @@ class LLMEngine:
 
         # Organize outputs by [sequence group][step] instead of
         # [step][sequence group].
-        output_by_sequence_group = create_output_by_sequence_group(
-            output, num_seq_groups=len(scheduled_seq_groups))
+        #output_by_sequence_group = create_output_by_sequence_group(
+        #    output, num_seq_groups=len(scheduled_seq_groups))
+        output_by_sequence_group =  [list(x) for x in zip(*output)]
 
         # Update the scheduled sequence groups with the model outputs.
         for scheduled_seq_group, outputs, seq_group_meta in zip(
