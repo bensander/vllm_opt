@@ -118,7 +118,7 @@ class RequestOutput:
                                  seq.get_output_token_ids(),
                                  seq.get_cumulative_logprob(),
                                  seq.output_logprobs if include_logprobs else None,
-                                 "tbd", #SequenceStatus.get_finished_reason(seq.status),
+                                 SequenceStatus.get_finished_reason(seq.status),
                                  seq.stop_reason)
             ]
         else:
@@ -146,7 +146,7 @@ class RequestOutput:
                                  seq.get_output_token_ids(),
                                  seq.get_cumulative_logprob(),
                                  seq.output_logprobs if include_logprobs else None,
-                                 "tbd", # SequenceStatus.get_finished_reason(seq.status),
+                                 SequenceStatus.get_finished_reason(seq.status),
                                  seq.stop_reason) for seq in top_n_seqs
             ]
 
